@@ -1,0 +1,10 @@
+--epoch 1 --rep 1 --bz 1
+--epoch 1 --rep 1 --bz 2
+--epoch 1 --rep 1 --bz 3
+--epoch 1 --rep 2 --bz 1
+--epoch 1 --rep 2 --bz 2
+--epoch 1 --rep 2 --bz 3
+--epoch 1 --rep 3 --bz 1
+--epoch 1 --rep 3 --bz 2
+--epoch 1 --rep 3 --bz 3
+
