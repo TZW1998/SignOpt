@@ -1,10 +1,24 @@
---epoch 1 --rep 1 --bz 1
---epoch 1 --rep 1 --bz 2
---epoch 1 --rep 1 --bz 3
---epoch 1 --rep 2 --bz 1
---epoch 1 --rep 2 --bz 2
---epoch 1 --rep 2 --bz 3
---epoch 1 --rep 3 --bz 1
---epoch 1 --rep 3 --bz 2
---epoch 1 --rep 3 --bz 3
-
+--precison amp_half --batchsize 32 --momentum 0.9 --plot_interval 100 --num_epoch 160 --MulStep 80 120 --lr_schedule none --optimizer SGD --model fastnet --label_smooth 0.1 --cutout 16 --lr 0.1 --task cls_CIFAR10
+--precison amp_half --batchsize 32 --momentum 0.9 --plot_interval 100 --num_epoch 160 --MulStep 80 120 --lr_schedule none --optimizer SGD --model fastnet --label_smooth 0.1 --cutout 16 --lr 0.001 --task cls_CIFAR10
+--precison amp_half --batchsize 32 --momentum 0.9 --plot_interval 100 --num_epoch 160 --MulStep 80 120 --lr_schedule none --optimizer Adam --model fastnet --label_smooth 0.1 --cutout 16 --lr 0.001 --task cls_CIFAR10
+--precison amp_half --batchsize 32 --momentum 0.9 --plot_interval 100 --num_epoch 160 --MulStep 80 120 --lr_schedule none --optimizer SignSGD --model fastnet --label_smooth 0.1 --cutout 16 --lr 0.001 --task cls_CIFAR10
+--precison amp_half --batchsize 32 --momentum 0.9 --plot_interval 100 --num_epoch 160 --MulStep 80 120 --lr_schedule none --optimizer Lamb --model fastnet --label_smooth 0.1 --cutout 16 --lr 0.01 --task cls_CIFAR10
+--precison amp_half --batchsize 32 --momentum 0.9 --plot_interval 100 --num_epoch 160 --MulStep 80 120 --lr_schedule step --optimizer SGD --model fastnet --label_smooth 0.1 --cutout 16 --lr 0.1 --task cls_CIFAR10
+--precison amp_half --batchsize 128 --momentum 0.9 --plot_interval 100 --num_epoch 160 --MulStep 80 120 --lr_schedule none --optimizer SGD --model fastnet --label_smooth 0.1 --cutout 16 --lr 0.1 --task cls_CIFAR10
+--precison amp_half --batchsize 128 --momentum 0.9 --plot_interval 100 --num_epoch 160 --MulStep 80 120 --lr_schedule none --optimizer SGD --model fastnet --label_smooth 0.1 --cutout 16 --lr 0.001 --task cls_CIFAR10
+--precison amp_half --batchsize 128 --momentum 0.9 --plot_interval 100 --num_epoch 160 --MulStep 80 120 --lr_schedule none --optimizer Adam --model fastnet --label_smooth 0.1 --cutout 16 --lr 0.001 --task cls_CIFAR10
+--precison amp_half --batchsize 128 --momentum 0.9 --plot_interval 100 --num_epoch 160 --MulStep 80 120 --lr_schedule none --optimizer SignSGD --model fastnet --label_smooth 0.1 --cutout 16 --lr 0.001 --task cls_CIFAR10
+--precison amp_half --batchsize 128 --momentum 0.9 --plot_interval 100 --num_epoch 160 --MulStep 80 120 --lr_schedule none --optimizer Lamb --model fastnet --label_smooth 0.1 --cutout 16 --lr 0.01 --task cls_CIFAR10
+--precison amp_half --batchsize 128 --momentum 0.9 --plot_interval 100 --num_epoch 160 --MulStep 80 120 --lr_schedule step --optimizer SGD --model fastnet --label_smooth 0.1 --cutout 16 --lr 0.1 --task cls_CIFAR10
+--precison amp_half --batchsize 1024 --momentum 0.9 --plot_interval 100 --num_epoch 160 --MulStep 80 120 --lr_schedule none --optimizer SGD --model fastnet --label_smooth 0.1 --cutout 16 --lr 0.1 --task cls_CIFAR10
+--precison amp_half --batchsize 1024 --momentum 0.9 --plot_interval 100 --num_epoch 160 --MulStep 80 120 --lr_schedule none --optimizer SGD --model fastnet --label_smooth 0.1 --cutout 16 --lr 0.001 --task cls_CIFAR10
+--precison amp_half --batchsize 1024 --momentum 0.9 --plot_interval 100 --num_epoch 160 --MulStep 80 120 --lr_schedule none --optimizer Adam --model fastnet --label_smooth 0.1 --cutout 16 --lr 0.001 --task cls_CIFAR10
+--precison amp_half --batchsize 1024 --momentum 0.9 --plot_interval 100 --num_epoch 160 --MulStep 80 120 --lr_schedule none --optimizer SignSGD --model fastnet --label_smooth 0.1 --cutout 16 --lr 0.001 --task cls_CIFAR10
+--precison amp_half --batchsize 1024 --momentum 0.9 --plot_interval 100 --num_epoch 160 --MulStep 80 120 --lr_schedule none --optimizer Lamb --model fastnet --label_smooth 0.1 --cutout 16 --lr 0.01 --task cls_CIFAR10
+--precison amp_half --batchsize 1024 --momentum 0.9 --plot_interval 100 --num_epoch 160 --MulStep 80 120 --lr_schedule step --optimizer SGD --model fastnet --label_smooth 0.1 --cutout 16 --lr 0.1 --task cls_CIFAR10
+--precison amp_half --batchsize 4096 --momentum 0.9 --plot_interval 100 --num_epoch 160 --MulStep 80 120 --lr_schedule none --optimizer SGD --model fastnet --label_smooth 0.1 --cutout 16 --lr 0.1 --task cls_CIFAR10
+--precison amp_half --batchsize 4096 --momentum 0.9 --plot_interval 100 --num_epoch 160 --MulStep 80 120 --lr_schedule none --optimizer SGD --model fastnet --label_smooth 0.1 --cutout 16 --lr 0.001 --task cls_CIFAR10
+--precison amp_half --batchsize 4096 --momentum 0.9 --plot_interval 100 --num_epoch 160 --MulStep 80 120 --lr_schedule none --optimizer Adam --model fastnet --label_smooth 0.1 --cutout 16 --lr 0.001 --task cls_CIFAR10
+--precison amp_half --batchsize 4096 --momentum 0.9 --plot_interval 100 --num_epoch 160 --MulStep 80 120 --lr_schedule none --optimizer SignSGD --model fastnet --label_smooth 0.1 --cutout 16 --lr 0.001 --task cls_CIFAR10
+--precison amp_half --batchsize 4096 --momentum 0.9 --plot_interval 100 --num_epoch 160 --MulStep 80 120 --lr_schedule none --optimizer Lamb --model fastnet --label_smooth 0.1 --cutout 16 --lr 0.01 --task cls_CIFAR10
+--precison amp_half --batchsize 4096 --momentum 0.9 --plot_interval 100 --num_epoch 160 --MulStep 80 120 --lr_schedule step --optimizer SGD --model fastnet --label_smooth 0.1 --cutout 16 --lr 0.1 --task cls_CIFAR10

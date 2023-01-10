@@ -1,3 +1,13 @@
-epoch:1,2,3
-rep:1,2,3
-bz:1,2,3
+precison:amp_half
+batchsize:32,128,1024,4096
+momentum:0.9
+plot_interval:100
+num_epoch:160
+MulStep:80 120
+lr_schedule:none,step
+optimizer:SGD,Adam,SignSGD,Lamb
+model:fastnet
+label_smooth:0.1
+cutout:16
+lr:0.1,0.01,0.001
+task:cls_CIFAR10

@@ -126,7 +126,7 @@ def setup_seed(seed):
 
 
 # training process
-if os.path.exists("code/logs/"+run_tags+".txt") and False: #(not args.rerun):
+if os.path.exists("code/logs/"+run_tags+".txt"): #and False: #(not args.rerun):
     print("Run already exists:")
 else:
     print("start training:")
