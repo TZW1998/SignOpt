@@ -126,7 +126,7 @@ def setup_seed(seed):
 
 
 # training process
-if os.path.exists("code/logs/"+run_tags+".txt"): #and False: #(not args.rerun):
+if os.path.exists("code/logs/"+run_tags+".txt") and (not args.rerun): #and False: :
     print("Run already exists:")
 else:
     print("start training:")
@@ -260,7 +260,7 @@ else:
                     write_msg = task.eval_model_with_log(model, writer, ep, steps, lr_now, device)
 
                     stats = ",".join(["{}".format(v) for v in write_msg.values()])
-                    f.write(stats)
+                    f.write(stats + "\n")
                     f.flush()
 
                     if (args.lr_schedule == "plateau") and (args.task == "cls_CIFAR10"):

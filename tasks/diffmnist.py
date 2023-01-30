@@ -50,12 +50,14 @@ class DiffMNIST:
     def loss_and_step(self, model, optimizer, batch_data, device) -> float:
         images, _ = batch_data
 
-        if self.physical_batchsize < self.batch_size_train:
+        batch_data_len = len(images)
 
-            if (self.batch_size_train % self.physical_batchsize) == 0:
-                num_steps = (self.batch_size_train // self.physical_batchsize)  
+        if self.physical_batchsize < batch_data_len:
+
+            if (batch_data_len % self.physical_batchsize) == 0:
+                num_steps = (batch_data_len // self.physical_batchsize)  
             else: 
-                num_steps = (self.batch_size_train // self.physical_batchsize)   + 1
+                num_steps = (batch_data_len // self.physical_batchsize)   + 1
                 
             for j in range(num_steps):
                 if j == num_steps - 1:

@@ -1,0 +1,2 @@
+--precison amp_half --batchsize 128 --momentum 0.9 --plot_interval 1000 --num_epoch 160 --MulStep 80 120 --lr_schedule none --optimizer SignSGD --model resnet20 --label_smooth 0.1 --cutout 16 --lr 0.001 --task cls_CIFAR10 --rerun True --quant_init --linf_bound 12 --save_model
+--precison amp_half --batchsize 128 --momentum 0.9 --plot_interval 2000 --num_epoch 160 --MulStep 80 120 --lr_schedule none --optimizer SignSGD --model fastnet --label_smooth 0.1 --cutout 16 --lr 0.001 --task diff_MNIST --rerun True --quant_init --linf_bound 12 --save_model
