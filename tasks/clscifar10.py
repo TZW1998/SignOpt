@@ -7,6 +7,7 @@ from torch import autocast
 from torch.cuda.amp import GradScaler 
 import torch
 import time
+from models import *
 
 class ClsCIFAR10:
     def __init__(self, batch_size_train = 128,
@@ -187,12 +188,18 @@ class ClsCIFAR10:
             'test_acc': test_correct,
             'lr': lr_now,
             'time': time.time() - self.start_time}
-
-        print("epoch:", ep, "steps:",steps, "train loss:", train_loss, "train acc", train_correct, "test loss:", test_loss, "test acc", test_correct, "lr", lr_now, "time", dt["time"])
-
-        if writer is not None:
-            
-            for k, v in dt.items():
-                writer.add_scalar("stats/" + k, v, steps)
-
         return dt
+    
+    def get_model(model_name):
+        if model_name == "resnet56P":
+            model = resnet56P()
+        elif model_name == "fastnet":
+            model = fastnet()
+        elif model_name == "fastnet2":
+            model = fastnet2()
+        elif model_name == "resnet20":
+            model = resnet20()
+        else:
+            raise ValueError("model name not found")
+        
+        return model

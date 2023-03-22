@@ -14,64 +14,66 @@ import argparse
 import os, shutil
 import time
 from optimizers import *
-from models import *
 from tasks import *
 import json
+from tqdm import tqdm
+
+TASK_DICT = {"cls_CIFAR10": ClsCIFAR10,
+             "diff_MNIST": DiffMNIST,
+            }
 
 def load_args():
     parser = argparse.ArgumentParser(description='Process some args.')
 
     # resume args
-    parser.add_argument("--resume", type = str, default = None, description = "to resume from a previous unfinised run")
+    parser.add_argument("--resume", type = str, default = None, help = "to resume from a previous unfinised run")
 
     # load args from config file
-    parser.add_argument("--config", type = str, default = None, description = "to load args from a config file")
+    parser.add_argument("--config", type = str, default = None, help = "to load args from a config file")
 
     # main experiment args
-    parser.add_argument("--gpu", default = "0", description = "gpu id")
-    parser.add_argument("--run_name", default = "test", description = "name for this run")
-    parser.add_argument("--rerun", type = bool, default = False, description = "whether to rerun this run even though it has been run before")
-    parser.add_argument('--seed', type=int, default=42, description = "random seed")
+    parser.add_argument("--gpu", default = "0", help = "gpu id")
+    parser.add_argument("--run_name", default = "test", help = "name for this run")
+    parser.add_argument("--rerun", type = bool, default = False, help = "whether to rerun this run even though it has been run before")
+    parser.add_argument('--seed', type=int, default=42, help = "random seed")
 
     # task args
-    parser.add_argument('--task', default = "diff_MNIST", choices=["cls_CIFAR10","diff_MNIST"], type=str, description = "task to run")
-    parser.add_argument('--model', default = "fastnet", type=str, choices=["resnet18", "resnet18_pretrained", "wide_resnet50_2", "resnet20","fastnet","fastnet2","resnet56P", "unet"], description = "model architecture to use, be careful that some models are only for specific tasks")
+    parser.add_argument('--task', default = "cls_CIFAR10", choices=["cls_CIFAR10","diff_MNIST"], type=str, help = "task to run")
+    parser.add_argument('--model', default = "fastnet", type=str, choices=["resnet18", "resnet18_pretrained", "wide_resnet50_2", "resnet20","fastnet","fastnet2","resnet56P", "unet"], help = "model architecture to use, be careful that some models are only for specific tasks")
 
     # args for global averaging
-    parser.add_argument('--num_glb_rounds', default = 100, type=int, description = "number of global averaging rounds")
-    parser.add_argument('--num_nodes', default = 8, type=int, description = "number of parelle nodes")
-    parser.add_argument('--glb_lr', default = 0.001, type=float, description = "learning rate for global averaging")
-    parser.add_argument('--glb_lr_schedule', default = "none", type=str,
-                    choices=["plateau", "none", "step"], description = "learning rate schedule for global averaging")
-    parser.add_argument('--glb_MulStep', default = [60,80], type=int, nargs='+', description = "milestones for step learning rate schedule, only used when lr_schedule is step")
-    parser.add_argument('--glb_tol', default = 10, type=int, description = "tolerance for plateau learning rate schedule, only used when lr_schedule is plateau")
-    parser.add_argument('--glb_optimizer', default = "SGD", type=str, choices=["SGD", "Adam", "AdamW", "SignSGD"])
-    parser.add_argument('--glb_beta1', default = 0.9, type=float, description = "For all optimizers, this is related to momentum")
-    parser.add_argument('--glb_noise_scale', type=float, default = 0, description = "noise scale for the sign-based compression, only used when optimizer is SignSGD")
-    parser.add_argument('--glb_beta2', default = 0.99, type=float, description = "For Adam, AdamW, and Lion, this is about the adaptive step, for SignSGD this is related to updated momentum")
-    parser.add_argument('--glb_weight_decay', default = 0, type=float, description = "weight decay for global averaging")
+    parser.add_argument('--num_glb_rounds', default = 100, type=int, help = "number of global averaging rounds")
+    parser.add_argument('--num_nodes', default = 8, type=int, help = "number of parelle nodes")
+
+    # args for global optimizer
+    parser.add_argument('--glb_lr', default = 0.1, type=float, help = "learning rate for global averaging")
+    parser.add_argument('--glb_optimizer', default = "SGD", type=str, choices=["SGD", "Adam", "AdamW", "SignSGD", "SignFedAvg"])
+    parser.add_argument('--glb_beta1', default = 0.9, type=float, help = "For all optimizers, this is related to momentum")
+    parser.add_argument('--glb_noise_scale', type=float, default = 0, help = "noise scale for the sign-based compression, only used when optimizer is SignFedAvg")
+    parser.add_argument('--glb_sign_allreduce', type=int, default = 0, help = "the way to do all-reduce for signed gradient, 0 means no further compression, 1 means majority vote, n means aggregate the sign by n groups (n should be divided by num_nodes with no remain), only used when optimizer is SignFedAvg")
+    parser.add_argument('--glb_beta2', default = 0.99, type=float, help = "For Adam, AdamW, this is about the adaptive step, for SignSGD and SignFedAvg this is related to updated momentum")
+    parser.add_argument('--glb_weight_decay', default = 0, type=float, help = "weight decay for global averaging")
 
     # args for local training
-    parser.add_argument('--num_local_steps', default = 1, type=int, description = "number of local training steps")
-    parser.add_argument('--batchsize', default = 32, type=int, description = "batch size for local training")
-    parser.add_argument('--lr', default = 0.001, type=float, description = "learning rate for local training, for local training, we use a fixed learning rate")
+    parser.add_argument('--num_local_steps', default = 1, type=int, help = "number of local training steps")
+    parser.add_argument('--batchsize', default = 32, type=int, help = "batch size for local training")
+    parser.add_argument('--lr', default = 0.1, type=float, help = "learning rate for local training, for local training, we use a fixed learning rate")
     parser.add_argument('--optimizer', default = "SGD", type=str, choices=["SGD", "Adam", "AdamW", "SignSGD"])
-    parser.add_argument('--beta1', default = 0.9, type=float, description = "For all optimizers, this is related to momentum")
-    parser.add_argument('--beta2', default = 0.99, type=float, description = "For Adam, AdamW, and SignSGD, this is about the adaptive step, for SignSGD this is related to updated momentum")
-    parser.add_argument('--weight_decay', default = 0, type=float, description = "weight decay for local training")
+    parser.add_argument('--beta1', default = 0.0, type=float, help = "For all optimizers, this is related to momentum")
+    parser.add_argument('--beta2', default = 0.99, type=float, help = "For Adam, AdamW, and SignSGD, this is about the adaptive step, for SignSGD this is related to updated momentum")
+    parser.add_argument('--weight_decay', default = 0, type=float, help = "weight decay for local training")
 
     # args for logging and saving
-    parser.add_argument('--log_tool', default = "tensorboard", type=str, choices=["tensorboard", "wandb"], description = "logging tool")
-    parser.add_argument('--plot_interval', default = 10, type=int, description = "interval for logging")
-    parser.add_argument('--save_interval', default = 20, type=int, description = "interval for saving")
+    parser.add_argument('--log_tool', default = "tensorboard", type=str, choices=["tensorboard", "wandb", "None"], help = "logging tool")
+    parser.add_argument('--plot_interval', default = 5, type=int, help = "interval for logging")
+    parser.add_argument('--save_interval', default = 20, type=int, help = "interval for saving")
 
     # args for torch training/testing
-    parser.add_argument('--precision', type=str, default="amp_half", choices=["single", "half", "amp_half"])
-    parser.add_argument('--test_batchsize', type=int, default = 1024, description = "batch size for testing")
-    parser.add_argument('--physical_batchsize', type=int, default = 1024, description = "physical batch size for training, when physical_batchsize > batchsize, we use gradient accumulation")
+    parser.add_argument('--precison', type=str, default="amp_half", choices=["single", "amp_half"])
+    parser.add_argument('--test_batchsize', type=int, default = 1024, help = "batch size for testing")
+    parser.add_argument('--physical_batchsize', type=int, default = 1024, help = "physical batch size for training, when physical_batchsize > batchsize, we use gradient accumulation")
 
     args = parser.parse_args()
-
     # whether to load other args from a config file
     if args.config is not None:
         with open(args.config, 'r') as f:
@@ -86,10 +88,16 @@ def load_args():
             config = json.load(f)
         print("resume from a previous run: " + args.resume)
         for key in config:
-            if key not in ["resume", "gpu"]: # allow to change gpu for resume
                 setattr(args, key, config[key])
+    else:
+        config = { }
+        # save the args to a config file
+        for key in args.__dict__: 
+            if key not in ["gpu", "resume"]:# do not save gpu and resume
+                config[key] = args.__dict__[key]
 
-    return parser.parse_args()
+    return parser.parse_args(), config
+
 
 def clean_dir(folder):
     for filename in os.listdir(folder):
@@ -111,242 +119,213 @@ def setup_seed(seed):
     torch.backends.cudnn.deterministic = True
 
 
-# training process
-if os.path.exists("code/logs/"+run_tags+".txt") and (not args.rerun): #and False: :
-    print("Run already exists:")
-else:
-    print("start training:")
-    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
-    
-    if args.seed is not None:
-        setup_seed(args.seed)
-
-    # define paths
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    # get training task
-    if args.task == "cls_CIFAR10":
-        task = ClsCIFAR10(batch_size_train = batch_size_train,
-                           batch_size_test = args.test_batchsize,
-                           cutout_size = args.cutout,
-                           num_workers = 4,
-                           label_smoothing = args.label_smooth,
-                           physical_batchsize = args.physical_batchsize,
-                           precison = args.precison)
-                    
-    elif args.task == "diff_MNIST":
-        task = DiffMNIST(batch_size_train = batch_size_train,
-                          num_workers = 4,
-                          physical_batchsize = args.physical_batchsize,
-                          precison = args.precison)
-    else:
-        raise NotImplementedError
-
-    train_loader = task.get_train_loader()
-    
-    if args.task == "diff_MNIST":
-        model = unet().to(device)
-        if args.model != "unet":
-            Warning("Model can only be unet for diff_MNIST task")
-    elif args.model == "resnet56P":
-        model = resnet56P().to(device)
-    elif args.model == "fastnet":
-        model = fastnet().to(device)
-    elif args.model == "fastnet2":
-        model = fastnet2().to(device)
-    elif args.model == "resnet20":
-        model = resnet20().to(device)
-    elif "pretrained" in args.model:
-        model = torch.hub.load('pytorch/vision:v0.10.0', args.model.strip("_pretrained"), pretrained=True).to(device)
-    else:
-        model = torch.hub.load('pytorch/vision:v0.10.0', args.model, pretrained=False).to(device)
-
-    if args.precison == "half":
-        model = model.half()
-        
-
-    if args.quant_init:
-        for p in model.parameters():
-            p.data.div_(lr,rounding_mode="floor").mul_(lr)
-
-    # torch.save(model,"init_model.pt")
-
-    # setup optimizer
-    if args.optimizer == "SGD":
-        optimizer = torch.optim.SGD(model.parameters(), lr = lr, momentum = args.momentum, weight_decay=args.weight_decay)
-    elif args.optimizer == "Adam":
-        if args.weight_decay > 1e-7:
-            optimizer = torch.optim.AdamW(model.parameters(), lr = lr, betas = (args.beta1, args.beta2), weight_decay=args.weight_decay)
-        else:
-            optimizer = torch.optim.Adam(model.parameters(), lr = lr, betas = (args.beta1, args.beta2)) 
-    elif args.optimizer == "SignSGD":
-        optimizer = SignSGD(model.parameters(), lr = lr, momentum = args.momentum, weight_decay=args.weight_decay, noise_scale=args.noise_scale, sign_type = args.SignTyp)
-    elif args.optimizer == "Lamb":
-        optimizer = Lamb(model.parameters(), lr = lr, betas = (args.beta1, args.beta2))
-        if args.weight_decay > 1e-7:
-            Warning("Lamb does not support weight decay")
-    else:
-        raise NotImplementedError
-    
-
-    train_data_len = task.get_train_data_len()
-
-    # setup lr scheduler
-    if args.lr_schedule == "plateau":
-        scheduler = ReduceLROnPlateau(optimizer, 'min', 
-        patience = args.tol * train_data_len // (args.plot_interval * batch_size_train), 
-        min_lr = 1e-4)
-    elif args.lr_schedule == "cosine":
-        scheduler = CosineAnnealingLR(optimizer,
-         T_max = args.tol * train_data_len // (args.plot_interval * batch_size_train),
-         eta_min=1e-4)
-    elif args.lr_schedule == "none":
-        scheduler = None
-    elif args.lr_schedule == "step":
-        scheduler = MultiStepLR(optimizer, milestones=args.MulStep, gamma=0.1)
-    elif args.lr_schedule == "onecycle":
-        scheduler = OneCycleLR(optimizer, max_lr=args.max_lr, steps_per_epoch=len(train_loader), epochs=args.num_epoch)
-    else:
-        raise NotImplementedError
-
-    steps = 0
-
-    if args.linf_bound >= 2:
-        lower_range = - 2. ** (args.linf_bound - 1) 
-        upper_range = - lower_range - 1
-        lower_range *= lr
-        upper_range *= lr
-        print("lower_range: ", lower_range, "upper_range: ", upper_range)
-    
-    # ============= Training ============= #
-    with open("code/logs/"+run_tags+".txt","w") as f:
-        for ep in range(args.num_epoch):
-            for i, batch_data in enumerate(train_loader):
-                steps += 1
-                optimizer.zero_grad()
-                
-                loss = task.loss_and_step(model, optimizer, batch_data, device)
-
-                if args.lr_schedule == "onecycle":
-                    scheduler.step()
-
-                # projection to linf ball
-                if args.linf_bound >= 2:
-                    for param in model.parameters():
-                        param.data = param.data.clamp(lower_range, upper_range)
-            
-                #check
-                if ((steps + 1) % args.plot_interval == 0) or ((ep == args.num_epoch - 1) and (i == len(train_loader) - 1)):
-
-                    if scheduler is None:
-                        lr_now = lr
-                    else:
-                        lr_now = scheduler.get_last_lr()[0]
-
-                    write_msg = task.eval_model_with_log(model, writer, ep, steps, lr_now, device)
-
-                    stats = ",".join(["{}".format(v) for v in write_msg.values()])
-                    f.write(stats + "\n")
-                    f.flush()
-
-                    if (args.lr_schedule == "plateau") and (args.task == "cls_CIFAR10"):
-                        scheduler.step(write_msg["test_loss"])
-                    elif args.lr_schedule == "cosine":
-                        scheduler.step()
-                    else:
-                        pass
-
-                    model.train()
-
-            if args.lr_schedule == "step":
-                scheduler.step()
-writer.close()
-if args.save_model:
-    torch.save(model.state_dict(),"code/output_models/{}.pth".format(run_tags))
-
-def local_train(args, task, model, optimizer, device, glb_round):
-    pass
-    
-def update_global_model(args, model, aggregated_local_model_diff):
-    pass
-
-def main(args):
-    # prepare for logging
-
+def process_tags(args):
     if args.resume is not None:
-        run_tags = args.resume.split("/")[-1]
-    else:
-        ## task tags
-        task_tags = f"task:(dt={args.task},md={args.model})"
-        
-        if args.glb_lr_schedule == "plateau":
-            lr_schedule_name = "(plateau,tol:{})".format(args.glb_tol)
-        elif args.glb_lr_schedule == "none":
-            lr_schedule_name = "none"
-        elif args.glb_lr_schedule == "step":
-            lr_schedule_name = "(step,ms:{})".format(args.MulStep)
-
-        ## global training tags
-        global_tags = f"global_train:(nr={args.num_glb_rounds},nn={args.num_nodes}, \
-                                    lr={args.glb_lr},lrs={lr_schedule_name})"
-
-
-
-    run_tags = "{}_{}_{}_{}_{}_qi:{}_linf:{}_opt:{}_lrs:{}_bz:{}_wd:{}_lbs:{}_ct:{}".format(args.run_name,
-                                                                args.rep,
-                                                                args.task,
-                                                                args.model, 
-                                                                args.precison,
-                                                                args.quant_init,
-                                                                args.linf_bound,
-                                                                optimizer_name,
-                                                                lr_schedule_name,
-                                                                args.batchsize,
-                                                                args.weight_decay,
-                                                                args.label_smooth,
-                                                                args.cutout)
-
+        return args.resume.split("/")[-1]
     
+    ## task tags
+    task_tags = f"task:(dt={args.task},md={args.model})"
+    
+    ## global training tags
+    global_tags = f"global_train:(nr={args.num_glb_rounds},nn={args.num_nodes})"
+    
+    ## global optimizer tags
+    global_optimizer_tags = f"global_opt:(opt={args.glb_optimizer}," + \
+                                        f"lr={args.glb_lr}," + \
+                                        f"wd={args.glb_weight_decay}," + \
+                                        f"b1={args.glb_beta1}," + \
+                                        f"b2={args.glb_beta2})"
+    if args.glb_optimizer == "SignFedAvg":
+        global_optimizer_tags += f",ns={args.glb_noise_scale}"
+        global_optimizer_tags += f",ar={args.glb_sign_allreduce}"
 
+    ## local optimizer tags
+    local_train_tags = f"local_train:(ns={args.num_local_steps}," + \
+                                    f"bs={args.batchsize}," + \
+                                    f"lr={args.lr}," + \
+                                    f"wd={args.weight_decay}," + \
+                                    f"b1={args.beta1}," + \
+                                    f"b2={args.beta2}," + \
+                                    f"opt={args.optimizer})"
+    
+    # all tags
+    run_tags = f"{args.run_name}_seed:{args.seed}_{task_tags}_{global_tags}_{global_optimizer_tags}_{local_train_tags}"
+    
+    return run_tags
 
-    if os.path.exists("code/logs/"+run_tags+".txt") and (not args.rerun) and (args.resume is None):
+def prepare_logger(args, run_tags):
+    if args.log_tool == "tensorboard":
+        log_dir = os.path.join("tb_logs", args.task, run_tags)
+        if os.path.exists(log_dir) and (args.resume is None):
+            clean_dir('tb_logs/{}/{}'.format(args.task,run_tags))
+        logger = SummaryWriter(logdir= log_dir)
+    elif args.log_tool == "wandb":
+        raise Exception(NotImplementedError) # ToDo
+    else:
+        logger = None
+
+    return logger
+
+def prepare_global_optimizer(args, global_model):
+    # global optimizer
+    if args.glb_optimizer == "SGD":
+        global_optimizer = torch.optim.SGD(global_model.parameters(), lr=args.glb_lr, momentum=args.glb_beta1, weight_decay=args.glb_weight_decay)
+    elif args.glb_optimizer == "Adam":
+        global_optimizer = torch.optim.Adam(global_model.parameters(), lr=args.glb_lr, betas=(args.glb_beta1, args.glb_beta2), weight_decay=args.glb_weight_decay)
+    elif args.glb_optimizer == "AdamW":
+        global_optimizer = torch.optim.AdamW(global_model.parameters(), lr=args.glb_lr, betas=(args.glb_beta1, args.glb_beta2), weight_decay=args.glb_weight_decay)
+    elif args.glb_optimizer == "SignFedAvg":
+        raise Exception(NotImplementedError)
+        # ToDo: add SignFedAvg optimizer
+        global_optimizer = SignFedAvg(global_model.parameters(), lr=args.glb_lr, betas=(args.glb_beta1, args.glb_beta2), weight_decay=args.glb_weight_decay, noise_scale=args.glb_noise_scale, sign_allreduce=args.glb_sign_allreduce)
+    elif args.optimizer == "SignSGD":
+        global_optimizer = SignSGD(global_model.parameters(), lr=args.glb_lr, betas=(args.glb_beta1, args.glb_beta2), weight_decay=args.glb_weight_decay)
+
+    return global_optimizer
+
+def prepare_local_optimizer(args, model):
+    # global optimizer
+    if args.optimizer == "SGD":
+        optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=args.beta1, weight_decay=args.weight_decay)
+    elif args.optimizer == "Adam":
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, betas=(args.beta1, args.beta2), weight_decay=args.weight_decay)
+    elif args.optimizer == "AdamW":
+        optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, betas=(args.beta1, args.beta2), weight_decay=args.eight_decay)
+    elif args.optimizer == "SignSGD":
+        optimizer = SignSGD(model.parameters(), lr=args.lr, betas=(args.beta1, args.beta2), weight_decay=args.weight_decay)
+
+    return optimizer
+
+def local_train(args, task, global_model, device):
+    local_models_diff = []
+    for _ in range(args.num_nodes):
+        model = copy.deepcopy(global_model)
+        optimizer = prepare_local_optimizer(args, model)
+        train_loader = task.get_train_loader()
+        local_steps = 0
+
+        while local_steps < args.num_local_steps:
+            for batch_data in train_loader:
+                local_steps += 1
+                optimizer.zero_grad()
+                _ = task.loss_and_step(model, optimizer, batch_data, device)
+                if local_steps == args.num_local_steps:
+                    break
+
+        local_model_dict = model.state_dict()
+        local_diff = {n : p - local_model_dict[n] for n,p in global_model.named_parameters()}
+        local_models_diff.append(local_diff)
+
+    return local_models_diff
+    
+def update_global_model(global_model, global_optimizer, local_models_diff):
+    global_optimizer.zero_grad()
+    if args.glb_optimizer != "SignFedAvg":
+        allreduced_gradient = {}
+        for n, p in global_model.named_parameters():
+            allreduced_gradient[n] = torch.zeros_like(p)
+            for local_diff in local_models_diff:
+                allreduced_gradient[n] += local_diff[n]
+            allreduced_gradient[n] /= len(local_models_diff)
+    else:
+        raise Exception(NotImplementedError) # ToDo: add SignFedAvg optimizer
+    
+    for n, p in global_model.named_parameters():
+        p.grad.data = allreduced_gradient[n]
+
+    global_optimizer.step()
+
+def main(args, config):
+    # load tags
+    run_tags = process_tags(args)
+
+    # prepare for logging
+    log_path = os.path.join("logs", run_tags)
+    if os.path.exists(log_path) and (not args.rerun) and (args.resume is None):
         print(f"Run {run_tags} already exists. Exit.")
         return
-    
-    if os.path.exists('code/runs/{}/{}'.format(args.task,run_tags)):
-        clean_dir('code/runs/{}/{}'.format(args.task,run_tags))
-
-    if args.tensorboard or True:
-        writer = SummaryWriter(logdir='code/runs/{}/{}'.format(args.task,run_tags))
     else:
-        writer = None
-
+        if args.resume is None:
+            if os.path.exists(log_path):
+                shutil.rmtree(log_path)
+            os.makedirs(log_path)
     
+        logfile = open(os.path.join(log_path, "log.txt"), "a")
+        with open(os.path.join(log_path, "config.json"), "w") as f:
+            json.dump(config, f, indent=4)
+
+    # prepare external logger
+    logger = prepare_logger(args, run_tags)
+    
+    # set gpu and seed
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if args.seed is not None:
         setup_seed(args.seed)
 
-    # define paths
-    
-
     # prepare task and model
+    task = TASK_DICT[args.task](batch_size_train = args.batchsize,
+                                num_workers = 12,
+                                physical_batchsize = args.physical_batchsize,
+                                precison = args.precison)
+    global_model = task.get_model(args.model).to(device)
 
     # prepare global optimizer
+    global_optimizer = prepare_global_optimizer(args, global_model)
+
+    # path to save model
+    model_path = os.path.join(log_path, "model.pth")
+
+    # resume
+    if args.resume is not None:
+        state_dict = torch.load(model_path)
+        start_round = state_dict["round"]
+        steps = state_dict["steps"]
+        global_model.load_state_dict(state_dict["model"])
+        global_optimizer.load_state_dict(state_dict["optimizer"])
+        print("resume from {}".format(args.resume))
+    else:
+        start_round = 0
+        steps = 0
 
     # start training
-    print("start training:")
-    for glb_round in range(args.num_glb_rounds):
-        # local training
-        aggregated_local_model_diff = local_train(args, task, model, optimizer, device, glb_round)
-        global_model = update_global_model(args, model, aggregated_local_model_diff)
-        # global evaluation
+    print(f"start training for : {run_tags}")
+    with tqdm(range(start_round, args.num_glb_rounds), unit="round") as tround:
+        for glb_round in tround:
+            tround.set_description("round {}".format(glb_round))
+            # local training
+            steps += args.num_local_steps
+            local_models_diff = local_train(args, task, global_model, device)
+            update_global_model(global_model, global_optimizer, local_models_diff)
+        
+            if glb_round % args.plot_interval == 0:
+                # global evaluation
+                log_msg = task.eval_model_with_log(global_model, device)
+                # get current info
+                log_msg["glb_round"] = glb_round
+                log_msg["glb_steps"] = steps
 
-        # global learning rate scheduling
+                # logging 
+                stats = ",".join(["{}".format(v) for v in log_msg.values()])
+                logfile.write(stats + "\n")
+                logfile.flush()
+                tround.set_postfix(log_msg)
 
-        # logging and saving
+                # log to external logger
+                if args.log_tool == "tensorboard":
+                    for k, v in log_msg.items():
+                        logger.add_scalar("stats/" + k, v, steps)
+                elif args.log_tool == "wandb":
+                    raise NotImplementedError # ToDo: add wandb logger
 
+            # saving
+            if glb_round % args.save_interval == 0:
+                torch.save({"glb_round":glb_round,
+                            "gradient_steps": steps,
+                            "model": global_model.state_dict(),
+                            "optimizer": global_optimizer.state_dict()},
+                            model_path)
 
 if __name__ == "__main__":
-    args = load_args()
-    main(args)
+    args, config = load_args()
+    main(args, config)
