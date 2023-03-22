@@ -1,3 +1,4 @@
+from tensorboardX import SummaryWriter
 import torch
 import torch.nn as nn
 import torchvision
@@ -6,7 +7,6 @@ import torch.nn.functional as F
 import torch.nn.init as init
 import torch.backends.cudnn as cudnn
 from torch.optim.lr_scheduler import MultiStepLR, ReduceLROnPlateau, CosineAnnealingLR, OneCycleLR
-from tensorboardX import SummaryWriter
 import numpy as np
 import random
 import copy
@@ -43,7 +43,7 @@ def load_args():
 
     # args for global averaging
     parser.add_argument('--num_glb_rounds', default = 100, type=int, help = "number of global averaging rounds")
-    parser.add_argument('--num_nodes', default = 8, type=int, help = "number of parelle nodes")
+    parser.add_argument('--num_nodes', default = 1, type=int, help = "number of parelle nodes")
 
     # args for global optimizer
     parser.add_argument('--glb_lr', default = 0.1, type=float, help = "learning rate for global averaging")
@@ -55,7 +55,7 @@ def load_args():
     parser.add_argument('--glb_weight_decay', default = 0, type=float, help = "weight decay for global averaging")
 
     # args for local training
-    parser.add_argument('--num_local_steps', default = 1, type=int, help = "number of local training steps")
+    parser.add_argument('--num_local_steps', default = 1000, type=int, help = "number of local training steps")
     parser.add_argument('--batchsize', default = 32, type=int, help = "batch size for local training")
     parser.add_argument('--lr', default = 0.1, type=float, help = "learning rate for local training, for local training, we use a fixed learning rate")
     parser.add_argument('--optimizer', default = "SGD", type=str, choices=["SGD", "Adam", "AdamW", "SignSGD"])
@@ -65,8 +65,8 @@ def load_args():
 
     # args for logging and saving
     parser.add_argument('--log_tool', default = "tensorboard", type=str, choices=["tensorboard", "wandb", "None"], help = "logging tool")
-    parser.add_argument('--plot_interval', default = 5, type=int, help = "interval for logging")
-    parser.add_argument('--save_interval', default = 20, type=int, help = "interval for saving")
+    parser.add_argument('--plot_interval', default = 1, type=int, help = "interval for logging")
+    parser.add_argument('--save_interval', default = 5, type=int, help = "interval for saving")
 
     # args for torch training/testing
     parser.add_argument('--precison', type=str, default="amp_half", choices=["single", "amp_half"])
@@ -81,6 +81,8 @@ def load_args():
         print("load args from config file: " + args.config)
         for key in config:
             setattr(args, key, config[key])
+        print(args)
+
     # resume from a previous run
     elif args.resume is not None: 
         config_path = os.path.join(args.resume, "config.json")
@@ -96,7 +98,7 @@ def load_args():
             if key not in ["gpu", "resume"]:# do not save gpu and resume
                 config[key] = args.__dict__[key]
 
-    return parser.parse_args(), config
+    return args, config
 
 
 def clean_dir(folder):
@@ -196,12 +198,31 @@ def prepare_local_optimizer(args, model):
 
     return optimizer
 
-def local_train(args, task, global_model, device):
+def local_train(args, task, global_model, global_optimizer, device):
     local_models_diff = []
-    for _ in range(args.num_nodes):
-        model = copy.deepcopy(global_model)
-        optimizer = prepare_local_optimizer(args, model)
-        train_loader = task.get_train_loader()
+    train_loader = task.get_train_loader()
+    if args.num_nodes > 1:
+        for _ in range(args.num_nodes):
+            model = copy.deepcopy(global_model)
+            optimizer = prepare_local_optimizer(args, model)
+            train_loader = task.get_train_loader()
+            local_steps = 0
+
+            while local_steps < args.num_local_steps:
+                for batch_data in train_loader:
+                    local_steps += 1
+                    optimizer.zero_grad()
+                    _ = task.loss_and_step(model, optimizer, batch_data, device)
+                    if local_steps == args.num_local_steps:
+                        break
+
+            local_model_dict = model.state_dict()
+            local_diff = {n : p - local_model_dict[n] for n,p in global_model.named_parameters()}
+            local_models_diff.append(local_diff)
+    else:
+        model = global_model
+        optimizer = global_optimizer
+
         local_steps = 0
 
         while local_steps < args.num_local_steps:
@@ -212,13 +233,9 @@ def local_train(args, task, global_model, device):
                 if local_steps == args.num_local_steps:
                     break
 
-        local_model_dict = model.state_dict()
-        local_diff = {n : p - local_model_dict[n] for n,p in global_model.named_parameters()}
-        local_models_diff.append(local_diff)
-
     return local_models_diff
     
-def update_global_model(global_model, global_optimizer, local_models_diff):
+def update_global_model(args, global_model, global_optimizer, local_models_diff):
     global_optimizer.zero_grad()
     if args.glb_optimizer != "SignFedAvg":
         allreduced_gradient = {}
@@ -227,11 +244,12 @@ def update_global_model(global_model, global_optimizer, local_models_diff):
             for local_diff in local_models_diff:
                 allreduced_gradient[n] += local_diff[n]
             allreduced_gradient[n] /= len(local_models_diff)
+            allreduced_gradient[n] /= args.lr
     else:
         raise Exception(NotImplementedError) # ToDo: add SignFedAvg optimizer
     
     for n, p in global_model.named_parameters():
-        p.grad.data = allreduced_gradient[n]
+        p.grad = allreduced_gradient[n]
 
     global_optimizer.step()
 
@@ -295,8 +313,9 @@ def main(args, config):
             tround.set_description("round {}".format(glb_round))
             # local training
             steps += args.num_local_steps
-            local_models_diff = local_train(args, task, global_model, device)
-            update_global_model(global_model, global_optimizer, local_models_diff)
+            local_models_diff = local_train(args, task, global_model, global_optimizer, device)
+            if args.num_nodes > 1: # when args.num_nodes == 1, local training is equivalent to global training
+                update_global_model(args, global_model, global_optimizer, local_models_diff)
         
             if glb_round % args.plot_interval == 0:
                 # global evaluation
@@ -320,11 +339,21 @@ def main(args, config):
 
             # saving
             if glb_round % args.save_interval == 0:
+                print("saving model at round {}".format(glb_round))
                 torch.save({"glb_round":glb_round,
                             "gradient_steps": steps,
                             "model": global_model.state_dict(),
                             "optimizer": global_optimizer.state_dict()},
                             model_path)
+                
+    # end logging
+    logfile.close()
+    if logger is not None:
+        logger.close()
+
+    # save final model
+    final_model_path =  os.path.join(log_path, "final_model.pth")
+    torch.save(global_model.state_dict(), final_model_path)
 
 if __name__ == "__main__":
     args, config = load_args()

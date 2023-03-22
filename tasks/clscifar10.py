@@ -8,6 +8,7 @@ from torch.cuda.amp import GradScaler
 import torch
 import time
 from models import *
+import os
 
 class ClsCIFAR10:
     def __init__(self, batch_size_train = 128,
@@ -38,12 +39,14 @@ class ClsCIFAR10:
         ])
 
 
-        train_dataset = torchvision.datasets.CIFAR10(root='.',
+        data_path = "/" + os.path.join(*__file__.split("/")[:-1], 'data')
+
+        train_dataset = torchvision.datasets.CIFAR10(data_path,
                                             train=True, 
-                                            download=True, transform=transform_train)
+                                             transform=transform_train, download=True)
 
 
-        test_dataset = torchvision.datasets.CIFAR10(root='.',
+        test_dataset = torchvision.datasets.CIFAR10(root=data_path,
                                             train=False, 
                                             transform=transform_test)
 
@@ -52,7 +55,7 @@ class ClsCIFAR10:
                                         batch_size= self.batch_size_train, 
                                         shuffle=True,num_workers = num_workers)
 
-        self.train_infer_loader = DataLoader(torchvision.datasets.CIFAR10(root='.',
+        self.train_infer_loader = DataLoader(torchvision.datasets.CIFAR10(root=data_path,
                                             train=True, 
                                             download=True, transform=transform_test),
                                         batch_size=batch_size_test, 
@@ -140,10 +143,9 @@ class ClsCIFAR10:
 
         return loss.item()
 
-    def eval_model_with_log(self,model, writer, ep, steps, lr_now, device) -> None:
+    def eval_model_with_log(self,model, device) -> None:
         with torch.no_grad():
         # train acc/loss
-            model.eval()
             train_loss, train_total, train_correct = 0.0, 0.0, 0.0
             for batch_idx, (images1, labels1) in enumerate(self.train_infer_loader):
                 images, labels = images1.to(device), labels1.to(device)
@@ -181,16 +183,15 @@ class ClsCIFAR10:
             test_correct /= test_total
 
         dt = {
-            'epoch': ep,
             'train_loss': train_loss,
             'train_acc': train_correct,
             'test_loss': test_loss,
             'test_acc': test_correct,
-            'lr': lr_now,
             'time': time.time() - self.start_time}
+
         return dt
     
-    def get_model(model_name):
+    def get_model(self, model_name):
         if model_name == "resnet56P":
             model = resnet56P()
         elif model_name == "fastnet":
