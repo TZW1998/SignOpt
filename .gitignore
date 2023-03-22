@@ -176,3 +176,13 @@ tags
 # model file
 *.ckpt
 *.pth
+
+/tb_logs
+
+/logs
+
+/data
+
+/tasks/data
+
+
