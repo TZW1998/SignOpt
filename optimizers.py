@@ -114,18 +114,24 @@ class SGDcustom(Optimizer):
 
 
 class SignSGD(Optimizer):
-    def __init__(self, params, lr=required, momentum=0,
+    def __init__(self, params, lr=required, betas=(0.9, 0.99),
                  weight_decay=0, *,
-                 differentiable=False, noise_scale = 0., sign_type = "standard"):
+                 differentiable=False):
+        
+        momentum = betas[0]
+        momentum_interp = betas[1]
+
         if lr is not required and lr < 0.0:
             raise ValueError("Invalid learning rate: {}".format(lr))
         if momentum < 0.0:
             raise ValueError("Invalid momentum value: {}".format(momentum))
+        if momentum_interp < 0.0:
+            raise ValueError("Invalid momentum_interp value: {}".format(momentum_interp))
         if weight_decay < 0.0:
             raise ValueError("Invalid weight_decay value: {}".format(weight_decay))
 
-        defaults = dict(lr=lr, momentum=momentum, 
-                        weight_decay=weight_decay, differentiable=differentiable, noise_scale = noise_scale, sign_type = sign_type)
+        defaults = dict(lr=lr, momentum=momentum, momentum_interp=momentum_interp,
+                        weight_decay=weight_decay, differentiable=differentiable)
 
         super(SignSGD, self).__init__(params, defaults)
 
@@ -158,138 +164,121 @@ class SignSGD(Optimizer):
                     else:
                         momentum_buffer_list.append(state['momentum_buffer'])
 
-                    if 'error_residuals' not in state:
-                        error_residuals_list.append(None)
-                    else:
-                        error_residuals_list.append(state['error_residuals'])
-
             self._update_params(params_with_grad,
                 d_p_list,
                 momentum_buffer_list,
-                error_residuals_list,
                 weight_decay=group['weight_decay'],
                 momentum=group['momentum'],
                 lr=group['lr'],
-                noise_scale = group['noise_scale'],
-                sign_type = group['sign_type'])
+                momentum_interp=group['momentum_interp'])
 
             # update momentum_buffers in state
             for p, momentum_buffer in zip(params_with_grad, momentum_buffer_list):
                 state = self.state[p]
                 state['momentum_buffer'] = momentum_buffer
 
-            # update error_residuals in state
-            for p, error_residuals in zip(params_with_grad, error_residuals_list):
-                state = self.state[p]
-                state['error_residuals'] = error_residuals
-
         return loss
 
     def _update_params(self, params: List[Tensor],
             d_p_list: List[Tensor],
             momentum_buffer_list: List[Optional[Tensor]],
-            error_residuals_list: List[Optional[Tensor]],
             *,
             weight_decay: float,
             momentum: float,
+            momentum_interp: float,
             lr: float,
-            noise_scale: float,
-            sign_type: str):
-
-        total1norm = 0
-        totaldim= 0
+            ):
 
         for i, param in enumerate(params):
             d_p = d_p_list[i]
 
-            if weight_decay != 0:
-                d_p = d_p.add(param, alpha=weight_decay)
-
-            if (momentum > 1e-8) and (not sign_type.endswith("EF")):
+            if momentum > 1e-8:
                 buf = momentum_buffer_list[i]
 
                 if buf is None:
                     buf = torch.clone(d_p).detach()
                     momentum_buffer_list[i] = buf
                 else:
-                    buf.mul_(momentum).add_(d_p, alpha=1)
+                    grad = buf.mul(momentum).add(d_p, alpha=1-momentum)
+                    buf.mul_(momentum_interp).add_(d_p, alpha=1-momentum_interp)
+                    d_p = grad
+            
+            # decouple momentum and weight decay
+            if weight_decay != 0:
+                d_p.add_(param, alpha=weight_decay)
 
-                d_p = buf.clone()
-                
+            # if noise_scale > 1e-8:
+            #     d_p.add_(torch.randn_like(d_p), alpha = noise_scale)
 
-            if noise_scale > 1e-8:
-                d_p.add_(torch.randn_like(d_p), alpha = noise_scale)
+            d_p.sign_()
+            param.add_(d_p, alpha=-lr)
+        #     elif sign_type == "EF":
+        #         error_residuals = error_residuals_list[i]
+        #         if error_residuals is not None:
+        #             d_p.add_(error_residuals,alpha=1)
 
-            if sign_type == "standard":
-                d_p.sign_()
+        #         total1norm += d_p.norm(p=1)
+        #         totaldim += d_p.numel()
+        #         d_p_list[i] = d_p
 
-            elif sign_type == "EF":
-                error_residuals = error_residuals_list[i]
-                if error_residuals is not None:
-                    d_p.add_(error_residuals,alpha=1)
-
-                total1norm += d_p.norm(p=1)
-                totaldim += d_p.numel()
-                d_p_list[i] = d_p
-
-            elif sign_type == "layerEF":
-                error_residuals = error_residuals_list[i]
-                if error_residuals is not None:
-                    d_p.add_(error_residuals,alpha=1)
+        #     elif sign_type == "layerEF":
+        #         error_residuals = error_residuals_list[i]
+        #         if error_residuals is not None:
+        #             d_p.add_(error_residuals,alpha=1)
                     
-                layer1norm = d_p.norm(p=1) / d_p.numel()
-                d_p_sign = d_p.sign()
-                d_p_sign.mul_(layer1norm)
-                error_residuals_list[i] = d_p - d_p_sign
-                d_p = d_p_sign
+        #         layer1norm = d_p.norm(p=1) / d_p.numel()
+        #         d_p_sign = d_p.sign()
+        #         d_p_sign.mul_(layer1norm)
+        #         error_residuals_list[i] = d_p - d_p_sign
+        #         d_p = d_p_sign
 
-                if momentum > 1e-8:
-                    buf = momentum_buffer_list[i]
+        #         if momentum > 1e-8:
+        #             buf = momentum_buffer_list[i]
 
-                    if buf is None:
-                        buf = torch.clone(d_p).detach()
-                        momentum_buffer_list[i] = buf
-                    else:
-                        buf.mul_(momentum).add_(d_p, alpha=1)
+        #             if buf is None:
+        #                 buf = torch.clone(d_p).detach()
+        #                 momentum_buffer_list[i] = buf
+        #             else:
+        #                 buf.mul_(momentum).add_(d_p, alpha=1)
 
-                    d_p = buf
+        #             d_p = buf
 
-            elif sign_type == "1norm":
-                total1norm += d_p.norm(p=1)
-                totaldim += d_p.numel()
-                d_p_list[i] = d_p
+        #     elif sign_type == "1norm":
+        #         total1norm += d_p.norm(p=1)
+        #         totaldim += d_p.numel()
+        #         d_p_list[i] = d_p
 
-            elif sign_type == "layer1norm":
-                layer1norm = d_p.norm(p=1) / d_p.numel()
-                d_p.sign_().mul_(layer1norm)
+        #     elif sign_type == "layer1norm":
+        #         layer1norm = d_p.norm(p=1) / d_p.numel()
+        #         d_p.sign_().mul_(layer1norm)
 
 
-            if (sign_type != "EF") and (sign_type != "1norm"):
-                param.add_(d_p, alpha=-lr)
+        #     if (sign_type != "EF") and (sign_type != "1norm"):
+        #         param.add_(d_p, alpha=-lr)
 
-        if (sign_type == "EF") or (sign_type == "1norm"):
-            for i, param in enumerate(params):
-                d_p = d_p_list[i]
-                if sign_type == "EF":
-                    d_p_sign = d_p.sign()
-                    d_p_sign.mul_(total1norm / totaldim)
-                    error_residuals_list[i] = d_p - d_p_sign
+        # if (sign_type == "EF") or (sign_type == "1norm"):
+        #     for i, param in enumerate(params):
+        #         d_p = d_p_list[i]
+        #         if sign_type == "EF":
+        #             d_p_sign = d_p.sign()
+        #             d_p_sign.mul_(total1norm / totaldim)
+        #             error_residuals_list[i] = d_p - d_p_sign
 
-                    if momentum > 1e-8:
-                        buf = momentum_buffer_list[i]
+        #             if momentum > 1e-8:
+        #                 buf = momentum_buffer_list[i]
 
-                        if buf is None:
-                            buf = torch.clone(d_p).detach()
-                            momentum_buffer_list[i] = buf
-                        else:
-                            buf.mul_(momentum).add_(d_p_sign, alpha=1)
+        #                 if buf is None:
+        #                     buf = torch.clone(d_p).detach()
+        #                     momentum_buffer_list[i] = buf
+        #                 else:
+        #                     buf.mul_(momentum).add_(d_p_sign, alpha=1)
 
-                        d_p_sign = buf
+        #                 d_p_sign = buf
 
-                    param.add_(d_p_sign, alpha=-lr)                
-                else:
-                    d_p.sign_().mul_(total1norm/totaldim)
-                    param.add_(d_p, alpha=-lr)
+        #             param.add_(d_p_sign, alpha=-lr)                
+        #         else:
+        #             d_p.sign_().mul_(total1norm/totaldim)
+        #             param.add_(d_p, alpha=-lr)
 
 
 """Lamb optimizer."""

@@ -1,4 +1,5 @@
 from tensorboardX import SummaryWriter
+
 import torch
 import torch.nn as nn
 import torchvision
@@ -180,7 +181,7 @@ def prepare_global_optimizer(args, global_model):
         raise Exception(NotImplementedError)
         # ToDo: add SignFedAvg optimizer
         global_optimizer = SignFedAvg(global_model.parameters(), lr=args.glb_lr, betas=(args.glb_beta1, args.glb_beta2), weight_decay=args.glb_weight_decay, noise_scale=args.glb_noise_scale, sign_allreduce=args.glb_sign_allreduce)
-    elif args.optimizer == "SignSGD":
+    elif args.glb_optimizer == "SignSGD":
         global_optimizer = SignSGD(global_model.parameters(), lr=args.glb_lr, betas=(args.glb_beta1, args.glb_beta2), weight_decay=args.glb_weight_decay)
 
     return global_optimizer
