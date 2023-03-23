@@ -146,6 +146,7 @@ class ClsCIFAR10:
     def eval_model_with_log(self,model, device) -> None:
         with torch.no_grad():
         # train acc/loss
+            model.eval()
             train_loss, train_total, train_correct = 0.0, 0.0, 0.0
             for batch_idx, (images1, labels1) in enumerate(self.train_infer_loader):
                 images, labels = images1.to(device), labels1.to(device)
@@ -189,6 +190,7 @@ class ClsCIFAR10:
             'test_acc': test_correct,
             'time': time.time() - self.start_time}
 
+        model.train() # switch back to train mode
         return dt
     
     def get_model(self, model_name):

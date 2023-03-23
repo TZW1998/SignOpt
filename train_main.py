@@ -35,7 +35,7 @@ def load_args():
     parser.add_argument("--gpu", default = "0", help = "gpu id")
     parser.add_argument("--run_name", default = "test", help = "name for this run")
     parser.add_argument("--rerun", type = bool, default = False, help = "whether to rerun this run even though it has been run before")
-    parser.add_argument('--seed', type=int, default=42, help = "random seed")
+    parser.add_argument('--seed', type=int, help = "random seed")
 
     # task args
     parser.add_argument('--task', default = "cls_CIFAR10", choices=["cls_CIFAR10","diff_MNIST"], type=str, help = "task to run")
@@ -204,6 +204,7 @@ def local_train(args, task, global_model, global_optimizer, device):
     if args.num_nodes > 1:
         for _ in range(args.num_nodes):
             model = copy.deepcopy(global_model)
+            model.train()
             optimizer = prepare_local_optimizer(args, model)
             train_loader = task.get_train_loader()
             local_steps = 0
@@ -222,9 +223,9 @@ def local_train(args, task, global_model, global_optimizer, device):
     else:
         model = global_model
         optimizer = global_optimizer
-
+        
+        model.train()
         local_steps = 0
-
         while local_steps < args.num_local_steps:
             for batch_data in train_loader:
                 local_steps += 1
@@ -232,6 +233,10 @@ def local_train(args, task, global_model, global_optimizer, device):
                 _ = task.loss_and_step(model, optimizer, batch_data, device)
                 if local_steps == args.num_local_steps:
                     break
+
+                # if local_steps % 500 == 0:
+                #     print(local_steps, task.eval_model_with_log(global_model, device))
+                #     model.train()
 
     return local_models_diff
     
