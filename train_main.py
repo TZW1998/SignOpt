@@ -40,7 +40,7 @@ def load_args():
 
     # task args
     parser.add_argument('--task', default = "cls_CIFAR10", choices=["cls_CIFAR10","diff_MNIST"], type=str, help = "task to run")
-    parser.add_argument('--model', default = "fastnet", type=str, choices=["resnet18", "resnet18_pretrained", "wide_resnet50_2", "resnet20","fastnet","fastnet2","resnet56P", "unet"], help = "model architecture to use, be careful that some models are only for specific tasks")
+    parser.add_argument('--model', default = "ViT-S", type=str, choices=["ViT-S","ViT-B","ViT-L","ViT-H","ConvNeXt-S","unet"], help = "model architecture to use, be careful that some models are only for specific tasks")
 
     # args for global averaging
     parser.add_argument('--num_glb_rounds', default = 100, type=int, help = "number of global averaging rounds")
@@ -174,9 +174,11 @@ def prepare_global_optimizer(args, global_model):
     if args.glb_optimizer == "SGD":
         global_optimizer = torch.optim.SGD(global_model.parameters(), lr=args.glb_lr, momentum=args.glb_beta1, weight_decay=args.glb_weight_decay)
     elif args.glb_optimizer == "Adam":
-        global_optimizer = torch.optim.Adam(global_model.parameters(), lr=args.glb_lr, betas=(args.glb_beta1, args.glb_beta2), weight_decay=args.glb_weight_decay)
-    elif args.glb_optimizer == "AdamW":
-        global_optimizer = torch.optim.AdamW(global_model.parameters(), lr=args.glb_lr, betas=(args.glb_beta1, args.glb_beta2), weight_decay=args.glb_weight_decay)
+        if args.glb_weight_decay > 1e-6:
+            print("Warning: Adam optimizer does not support weight decay, set weight decay to 0")
+            global_optimizer = torch.optim.AdamW(global_model.parameters(), lr=args.glb_lr, betas=(args.glb_beta1, args.glb_beta2), weight_decay=args.glb_weight_decay)
+        else:
+            global_optimizer = torch.optim.Adam(global_model.parameters(), lr=args.glb_lr, betas=(args.glb_beta1, args.glb_beta2), weight_decay=0)
     elif args.glb_optimizer == "SignFedAvg":
         raise Exception(NotImplementedError)
         # ToDo: add SignFedAvg optimizer
@@ -191,9 +193,11 @@ def prepare_local_optimizer(args, model):
     if args.optimizer == "SGD":
         optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=args.beta1, weight_decay=args.weight_decay)
     elif args.optimizer == "Adam":
-        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, betas=(args.beta1, args.beta2), weight_decay=args.weight_decay)
-    elif args.optimizer == "AdamW":
-        optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, betas=(args.beta1, args.beta2), weight_decay=args.eight_decay)
+        if args.weight_decay > 1e-6:
+            print("Warning: Adam optimizer does not support weight decay, set weight decay to 0")
+            optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, betas=(args.beta1, args.beta2), weight_decay=args.weight_decay)
+        else:
+            optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, betas=(args.beta1, args.beta2), weight_decay=0)
     elif args.optimizer == "SignSGD":
         optimizer = SignSGD(model.parameters(), lr=args.lr, betas=(args.beta1, args.beta2), weight_decay=args.weight_decay)
 
@@ -217,10 +221,12 @@ def local_train(args, task, global_model, global_optimizer, device):
                     _ = task.loss_and_step(model, optimizer, batch_data, device)
                     if local_steps == args.num_local_steps:
                         break
-
+            
+            #import ipdb; ipdb.set_trace()
             local_model_dict = model.state_dict()
-            local_diff = {n : p - local_model_dict[n] for n,p in global_model.named_parameters()}
-            local_models_diff.append(local_diff)
+            #local_diff = {n : p - local_model_dict[n] for n,p in global_model.named_parameters()}
+            local_models_diff.append(local_model_dict)
+            break
     else:
         model = global_model
         optimizer = global_optimizer
@@ -245,19 +251,29 @@ def update_global_model(args, global_model, global_optimizer, local_models_diff)
     global_optimizer.zero_grad()
     if args.glb_optimizer != "SignFedAvg":
         allreduced_gradient = {}
-        for n, p in global_model.named_parameters():
-            allreduced_gradient[n] = torch.zeros_like(p)
-            for local_diff in local_models_diff:
-                allreduced_gradient[n] += local_diff[n]
-            allreduced_gradient[n] /= len(local_models_diff)
-            allreduced_gradient[n] /= args.lr
+        # for n, p in global_model.named_parameters():
+        #     # allreduced_gradient[n] = torch.zeros_like(p)
+        #     # for local_diff in local_models_diff:
+        #     #     allreduced_gradient[n] += local_diff[n]
+        #     # allreduced_gradient[n] /= len(local_models_diff)
+        #     # allreduced_gradient[n] /= args.lr
+        #     p.data = local_models_diff[0][n]
+     
+
+        
+        global_model.load_state_dict(local_models_diff[0])
+
+        # for n, p in global_model.named_parameters():
+        #     p.data.copy_(local_models_diff[0][n])
     else:
         raise Exception(NotImplementedError) # ToDo: add SignFedAvg optimizer
     
-    for n, p in global_model.named_parameters():
-        p.grad = allreduced_gradient[n]
+    #import ipdb; ipdb.set_trace()
+    pass
+    # for n, p in global_model.named_parameters():
+    #     p.grad = allreduced_gradient[n]
 
-    global_optimizer.step()
+    # global_optimizer.step()
 
 def main(args, config):
     # load tags

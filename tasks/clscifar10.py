@@ -9,6 +9,7 @@ import torch
 import time
 from models import *
 import os
+from vit_pytorch import ViT, SimpleViT
 
 class ClsCIFAR10:
     def __init__(self, batch_size_train = 128,
@@ -194,14 +195,70 @@ class ClsCIFAR10:
         return dt
     
     def get_model(self, model_name):
-        if model_name == "resnet56P":
-            model = resnet56P()
-        elif model_name == "fastnet":
-            model = fastnet()
-        elif model_name == "fastnet2":
-            model = fastnet2()
-        elif model_name == "resnet20":
-            model = resnet20()
+        if model_name == "ViT-S":
+            model = SimpleViT(
+                    image_size = 32,
+                    patch_size = 4,
+                    num_classes = 10,
+                    dim = 256,
+                    depth = 6,
+                    heads = 12,
+                    mlp_dim = 1024
+                )
+        elif model_name == "ViT-B":
+            model = SimpleViT(
+                    image_size = 32,
+                    patch_size = 4,
+                    num_classes = 10,
+                    dim = 512,
+                    depth = 6,
+                    heads = 16,
+                    mlp_dim = 1024
+                )
+        elif model_name == "ViT-L":
+            model = SimpleViT(
+                    image_size = 32,
+                    patch_size = 4,
+                    num_classes = 10,
+                    dim = 1024,
+                    depth = 6,
+                    heads = 16,
+                    mlp_dim = 2048
+                )
+        elif model_name == "ViT-H":
+            model = SimpleViT(
+                    image_size = 32,
+                    patch_size = 4,
+                    num_classes = 10,
+                    dim = 1024,
+                    depth = 9,
+                    heads = 24,
+                    mlp_dim = 2048
+                )
+        elif model_name == "ConvNeXt-S":
+            model = ConvNeXt(10,
+                 channel_list = [64, 128, 128, 128],
+                 num_blocks_list = [1, 1, 1, 1],
+                 kernel_size=7, patch_size=1,
+                 res_p_drop=0.)
+        elif model_name == "ConvNeXt-B":
+            model = ConvNeXt(10,
+                 channel_list = [64, 128, 256, 512],
+                 num_blocks_list = [2, 2, 2, 2],
+                 kernel_size=7, patch_size=1,
+                 res_p_drop=0.)
+        elif model_name == "ConvNeXt-L":
+            model = ConvNeXt(10,
+                 channel_list = [256, 512, 512, 1024],
+                 num_blocks_list = [2, 2, 2, 2],
+                 kernel_size=7, patch_size=1,
+                 res_p_drop=0.)
+        elif model_name == "ConvNeXt-H":
+           model = ConvNeXt(10,
+                 channel_list = [256, 512, 1024, 1024, 1024],
+                 num_blocks_list = [2, 2, 2, 2, 2],
+                 kernel_size=7, patch_size=1,
+                 res_p_drop=0.)
         else:
             raise ValueError("model name not found")
         

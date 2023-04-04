@@ -4,7 +4,7 @@
     "rerun": true,
     "seed": 42,
     "task": "cls_CIFAR10",
-    "model": "resnet20",
+    "model": "resnetG20",
     "num_glb_rounds": 120,
     "num_nodes": 1,
     "glb_lr": 0.001,
